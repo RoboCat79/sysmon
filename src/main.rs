@@ -350,3 +350,83 @@ pub fn render_sparkline(history: &VecDeque<f64>, width: usize, mode: ColorMode, 
 
     result
 }
+
+pub struct BoxStyle {
+    color_code: &'static str,
+    title: &'static str,
+    width: usize,
+}
+pub fn render_box(lines: &[String], style: &BoxStyle) -> Vec<String> {
+    let color = style.color_code;
+    let width = style.width;
+
+    let mut output = Vec::new();
+
+    let title_segment = if style.title.is_empty() {
+        String::new()
+    } else {
+        format!(" {} ", style.title)
+    };
+
+    let title_char_len = title_segment.chars().count();
+    let border_space = width.saturating_sub(2 + title_char_len);
+    let left_dashes = 3.min(border_space);
+    let right_dashes = border_space.saturating_sub(left_dashes);
+
+    let top_border = format!(
+        "{color}╭{}{title_segment}{}╮{RESET}",
+        "─".repeat(left_dashes),
+        format!("{color}{}", "─".repeat(right_dashes))
+    );
+    output.push(top_border);
+
+    for line in lines {
+        let visible_len = strip_ansi_len(line);
+        let inner_width = width.saturating_sub(2);
+        let padding_needed = inner_width.saturating_sub(visible_len);
+
+        output.push(format!(
+            "{color}│{RESET} {}{}{color}│{RESET}",
+            line,
+            " ".repeat(padding_needed.saturating_sub(1))
+        ));
+    }
+
+    let bottom_border = format!(
+        "{color}╰{}╯{RESET}",
+        "─".repeat(width.saturating_sub(2))
+    );
+    output.push(bottom_border);
+
+    output
+}
+
+/// Count visible character length ignoring ANSI color escape sequences
+fn strip_ansi_len(s: &str) -> usize {
+    let mut in_escape = false;
+    let mut count = 0;
+
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if c == 'm' {
+                in_escape = false;
+            }
+        } else {
+            count += 1;
+        }
+    }
+    count
+}
+
+pub fn print_columns(left_box: &[String], right_box: &[String]) {
+    let max_lines = left_box.len().max(right_box.len());
+
+    for i in 0..max_lines {
+        let left_str = left_box.get(i).map(|s| s.as_str()).unwrap_or("");
+        let right_str = right_box.get(i).map(|s| s.as_str()).unwrap_or("");
+
+        println!("{}  {}", left_str, right_str);
+    }
+}
