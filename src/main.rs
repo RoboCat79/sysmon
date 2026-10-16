@@ -1,4 +1,6 @@
-use sysinfo::{System};
+use sysinfo::{Components, System};
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     let system = SystemMonitor::new();
@@ -7,6 +9,7 @@ fn main() {
 //// ====== System Monitor ======
 struct SystemMonitor {
     sys: System,
+    components: Components,
     header: SystemHeader,
     cpu: CPU,
     memory: Memory,
@@ -20,11 +23,16 @@ struct SystemMonitor {
 impl SystemMonitor {
     pub fn new() -> Self {
         let mut sys = System::new_all();
+        let mut components = Components::new_with_refreshed_list();
+
+        sys.refresh_cpu_all();
+        thread::sleep(Duration::from_millis(200));
         sys.refresh_all();
+        components.refresh(true);
 
         Self {
             header: SystemHeader::new(),
-            cpu: Default::default(),
+            cpu: CPU::new(&sys, &components),
             memory: Memory::new(&sys),
             gpu: Default::default(),
             cooling: Default::default(),
@@ -32,15 +40,18 @@ impl SystemMonitor {
             storage: Default::default(),
             processes: Default::default(),
             sys,
+            components,
         }
     }
 
     pub fn update(&mut self) {
         // Refresh sysinfo data
         self.sys.refresh_all();
+        self.components.refresh(true);
 
         // Update each component
         self.header.update();
+        self.cpu.update(&self.sys, &self.components);
         self.memory.update(&self.sys);
     }
 }
@@ -100,10 +111,67 @@ impl SystemHeader {
 }
 
 /// CPU
-#[derive(Default)]
-struct CPU {}
+#[derive(Debug)]
+struct CPU {
+    name: String,
+    physical_cores: usize,
+    logical_cores: usize,
 
-impl CPU {}
+    global_usage: f32,
+    frequency_mhz: u64,
+    temperature_c: f32,
+    core_usages: Vec<f32>,
+}
+
+impl CPU {
+    pub fn new(sys: &System, components: &Components) -> Self {
+        let name = sys
+            .cpus()
+            .first()
+            .map(|cpu| cpu.brand().to_string())
+            .unwrap_or_else(|| "Unknown CPU".to_string());
+
+        let physical_cores = sysinfo::System::physical_core_count().unwrap_or(0);
+        let logical_cores = sys.cpus().len();
+
+        let mut cpu = Self {
+            name,
+            physical_cores,
+            logical_cores,
+            global_usage: 0.0,
+            frequency_mhz: 0,
+            temperature_c: 0.0,
+            core_usages: vec![0.0; logical_cores],
+        };
+
+        cpu.update(sys, components);
+        cpu
+    }
+
+    pub fn update(&mut self, sys: &System, components: &Components) {
+        // Overall usage percentage accross all cores
+        self.global_usage = sys.global_cpu_usage();
+
+        // Per-core usages
+        self.core_usages = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
+
+        // Average frequency across cores (in MHz)
+        if !sys.cpus().is_empty() {
+            let total_freq: u64 = sys.cpus().iter().map(|c| c.frequency()).sum();
+            self.frequency_mhz = total_freq / sys.cpus().len() as u64;
+        }
+
+        // Temperature: look for CPU / Tctl / k10temp / coretemp sensor
+        self.temperature_c = components
+            .iter()
+            .find(|c| {
+                let label = c.label().to_lowercase();
+                label.contains("cpu") || label.contains("tctl") || label.contains("k10temp") || label.contains("coretemp")
+            })
+            .and_then(|c| c.temperature())
+            .unwrap_or(0.0);
+    }
+}
 
 /// Memory
 #[derive(Debug)]
