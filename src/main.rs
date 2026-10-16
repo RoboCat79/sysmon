@@ -1,4 +1,4 @@
-use sysinfo::{Process, System};
+use sysinfo::{System};
 
 fn main() {
     let system = SystemMonitor::new();
@@ -23,7 +23,7 @@ impl SystemMonitor {
         sys.refresh_all();
 
         Self {
-            header: Default::default(),
+            header: SystemHeader::new(),
             cpu: Default::default(),
             memory: Memory::new(&sys),
             gpu: Default::default(),
@@ -40,18 +40,64 @@ impl SystemMonitor {
         self.sys.refresh_all();
 
         // Update each component
+        self.header.update();
         self.memory.update(&self.sys);
     }
 }
 
 
 /// System Header
-#[derive(Default)]
+#[derive(Debug)]
 struct SystemHeader {
+    host_name: String,
+    os_name: String,
+    kernel_version: String,
+    architecture: String,
 
+    uptime_seconds: u64,
+    load_avg_one: f64,
+    load_avg_five: f64,
+    load_avg_fifteen: f64,
 }
 
-impl SystemHeader {}
+impl SystemHeader {
+    pub fn new() -> Self {
+        let load = System::load_average();
+
+        Self {
+            host_name: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
+            os_name: System::name().unwrap_or_else(|| "Linux".to_string()),
+            kernel_version: System::kernel_version().unwrap_or_else(|| "".to_string()),
+            architecture: System::cpu_arch(),
+            uptime_seconds: System::uptime(),
+            load_avg_one: load.one,
+            load_avg_five: load.five,
+            load_avg_fifteen: load.fifteen,
+        }
+    }
+
+    pub fn update(&mut self) {
+        let load = System::load_average();
+        self.uptime_seconds = System::uptime();
+        self.load_avg_one = load.one;
+        self.load_avg_five = load.five;
+        self.load_avg_fifteen = load.fifteen;
+    }
+
+    /// Format Uptime to DD:HH:MM:SS
+    pub fn format_uptime(&self) -> String {
+        let days = self.uptime_seconds / 86400;
+        let hours = (self.uptime_seconds % 86400) / 3600;
+        let minutes = (self.uptime_seconds % 3600) / 60;
+        let seconds = self.uptime_seconds % 60;
+
+        if days > 0 {
+            format!("{:02}:{:02}:{:02}:{:02}", days, hours, minutes, seconds)
+        } else {
+            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        }
+    }
+}
 
 /// CPU
 #[derive(Default)]
