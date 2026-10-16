@@ -7,7 +7,7 @@ fn main() {
 //// ====== System Monitor ======
 struct SystemMonitor {
     sys: System,
-    system_header: SystemHeader,
+    header: SystemHeader,
     cpu: CPU,
     memory: Memory,
     gpu: GPU,
@@ -19,32 +19,37 @@ struct SystemMonitor {
 
 impl SystemMonitor {
     pub fn new() -> Self {
-        let mut monitor = Self {
-            sys: System::new_all(),
-            system_header: Default::default(),
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        Self {
+            header: Default::default(),
             cpu: Default::default(),
-            memory: Default::default(),
+            memory: Memory::new(&sys),
             gpu: Default::default(),
             cooling: Default::default(),
             network: Default::default(),
             storage: Default::default(),
             processes: Default::default(),
-        };
-
-        monitor.update();
-        monitor
+            sys,
+        }
     }
 
     pub fn update(&mut self) {
         // Refresh sysinfo data
         self.sys.refresh_all();
+
+        // Update each component
+        self.memory.update(&self.sys);
     }
 }
 
 
 /// System Header
 #[derive(Default)]
-struct SystemHeader {}
+struct SystemHeader {
+
+}
 
 impl SystemHeader {}
 
@@ -55,10 +60,45 @@ struct CPU {}
 impl CPU {}
 
 /// Memory
-#[derive(Default)]
-struct Memory {}
+#[derive(Debug)]
+struct Memory {
+    total_ram: u64,
+    total_swap: u64,
 
-impl Memory {}
+    used_ram: u64,
+    used_swap: u64,
+}
+
+impl Memory {
+    // Read stats from the system and create a new Memory instance
+    fn new(sys: &System) -> Self {
+        Self {
+            total_ram: sys.total_memory(),
+            total_swap: sys.total_swap(),
+            used_ram: sys.used_memory(),
+            used_swap: sys.used_swap(),
+        }
+    }
+
+    fn update(&mut self, sys: &System) {
+        self.used_ram = sys.used_memory();
+        self.used_swap = sys.used_swap();
+    }
+
+    // Calculate usage percentages
+    fn ram_usage(&self) -> f64 {
+        if self.total_ram == 0 {
+            return 0.0;
+        }
+        (self.used_ram as f64 / self.total_ram as f64) * 100.0
+    }
+    fn swap_usage(&self) -> f64 {
+        if self.total_swap == 0 {
+            return 0.0;
+        }
+        (self.used_swap as f64 / self.total_swap as f64) * 100.0
+    }
+}
 
 /// GPU
 #[derive(Default)]
@@ -89,3 +129,26 @@ impl Storage {}
 struct Processes {}
 
 impl Processes {}
+
+//// ====== HELPER FUNCTIONS ======
+/// Format Bytes
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+
+
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+
+
+    while size > 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+
+    if unit_index == 0 {
+        format!("{:.0} {}", size, UNITS[unit_index])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_index - 1])
+    }
+}
