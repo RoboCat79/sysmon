@@ -1,6 +1,7 @@
 use sysinfo::{Components, System};
 use std::thread;
 use std::time::Duration;
+use std::collections::VecDeque;
 
 fn main() {
     let system = SystemMonitor::new();
@@ -121,6 +122,9 @@ struct CPU {
     frequency_mhz: u64,
     temperature_c: f32,
     core_usages: Vec<f32>,
+
+    pub usage_history: VecDeque<f64>,
+    pub max_history_len: usize,
 }
 
 impl CPU {
@@ -134,6 +138,8 @@ impl CPU {
         let physical_cores = sysinfo::System::physical_core_count().unwrap_or(0);
         let logical_cores = sys.cpus().len();
 
+        let max_history_len = 24;
+
         let mut cpu = Self {
             name,
             physical_cores,
@@ -142,6 +148,8 @@ impl CPU {
             frequency_mhz: 0,
             temperature_c: 0.0,
             core_usages: vec![0.0; logical_cores],
+            usage_history: VecDeque::with_capacity(max_history_len),
+            max_history_len
         };
 
         cpu.update(sys, components);
