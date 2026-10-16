@@ -170,6 +170,11 @@ impl CPU {
             })
             .and_then(|c| c.temperature())
             .unwrap_or(0.0);
+
+        if self.usage_history.len() >= self.max_history_len {
+            self.usage_history.pop_front();
+        }
+        self.usage_history.push_back(self.global_usage as f64);
     }
 }
 
@@ -265,4 +270,83 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{:.2} {}", size, UNITS[unit_index - 1])
     }
+}
+
+//// === Render Helpers ===
+const RESET: &str = "\x1b[0m";
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+const RED: &str = "\x1b[31m";
+const CYAN: &str = "\x1b[36m";
+const BLUE: &str = "\x1b[34m";
+const MAGENTA: &str = "\x1b[35m";
+const WHITE: &str = "\x1b[37m";
+const DARK_GRAY: &str = "\x1b[90m";
+
+#[derive(Clone, Copy)]
+pub enum ColorMode {
+    // Changes color dynamically based on load thresholds
+    DynamicThreshold,
+
+    // Fixed static color regardless of percentage
+    Fixed(&'static str),
+
+    // Custom 24-bit TrueColor RGB: FixedRgb(r, g, b)
+    FixedRgb(u8, u8, u8),
+}
+fn resolve_color(mode: ColorMode, percent: f64) -> String {
+    match mode {
+        ColorMode::DynamicThreshold => {
+            if percent >= 95.0 {
+                RED.to_string()
+            } else if percent >= 70.0 {
+                YELLOW.to_string()
+            } else {
+                GREEN.to_string()
+            }
+        }
+        ColorMode::Fixed(ansi) => ansi.to_string(),
+        ColorMode::FixedRgb(r, g, b) => format!("\x1b[38;2;{};{};{}m", r, g, b),
+    }
+}
+
+/// Renders a horizontal bar of a fixed character width
+/// `percent`: value from 0.0 tp 100.0
+/// `width`: numbre of chracters wide the bar should be
+pub fn render_bar(percent: f64, width: usize, mode: ColorMode, track_char: char) -> String {
+    let clamped = percent.clamp(0.0, 100.0);
+    let filled_len = ((clamped / 100.0) * width as f64).round() as usize;
+    let empty_len = width - filled_len;
+
+    let color = resolve_color(mode, clamped);
+
+    let filled_str = "█".repeat(filled_len);
+    let empty_str: String = std::iter::repeat(track_char).take(empty_len).collect();
+
+    format!("{color}{filled_str}{DARK_GRAY}{empty_str}{RESET}")
+}
+
+/// Renders a sparkline / histogram string from a history slice.
+/// Takes values between 0.0 and 100.0.
+pub fn render_sparkline(history: &VecDeque<f64>, width: usize, mode: ColorMode, pad_char: char) -> String {
+    const SPARK_CHARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+    let mut result = String::with_capacity(width);
+
+    if history.len() < width {
+        let pad_len = width - history.len();
+        let pad_str: String = std::iter::repeat(pad_char).take(pad_len).collect();
+        result.push_str(&format!("{DARK_GRAY}{pad_str}{RESET}"))
+    }
+
+    let start_idx = history.len().saturating_sub(width);
+    for &val in history.range(start_idx..) {
+        let clamped = val.clamp(0.0, 100.0);
+
+        let index = (((clamped / 100.0) * 7.0).round() as usize).min(7);
+        let color = resolve_color(mode, clamped);
+        result.push_str(&format!("{color}{}{RESET}", SPARK_CHARS[index]));
+    }
+
+    result
 }
