@@ -1,10 +1,11 @@
+use terminal_size::{terminal_size, Width, Height};
 use sysinfo::{Components, System};
 use std::thread;
 use std::time::Duration;
 use std::collections::VecDeque;
 
 fn main() {
-    let system = SystemMonitor::new();
+
 }
 
 //// ====== System Monitor ======
@@ -55,6 +56,12 @@ impl SystemMonitor {
         self.cpu.update(&self.sys, &self.components);
         self.memory.update(&self.sys);
     }
+
+    pub fn display(&mut self) {
+        //self.header.display(get_terminal_width(64));
+        //self.cpu.display();
+        //self.memory.display();
+    }
 }
 
 
@@ -65,6 +72,7 @@ struct SystemHeader {
     os_name: String,
     kernel_version: String,
     architecture: String,
+    rust_version: &'static str,
 
     uptime_seconds: u64,
     load_avg_one: f64,
@@ -76,11 +84,21 @@ impl SystemHeader {
     pub fn new() -> Self {
         let load = System::load_average();
 
+        let raw_os = System::name().unwrap_or_default();
+        let os_name = if raw_os.is_empty() {
+            "Linux".to_string()
+        } else if !raw_os.to_lowercase().contains("linux") {
+            format!("Linux ({})", raw_os)
+        } else {
+            raw_os
+        };
+
         Self {
             host_name: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
-            os_name: System::name().unwrap_or_else(|| "Linux".to_string()),
+            os_name,
             kernel_version: System::kernel_version().unwrap_or_else(|| "".to_string()),
             architecture: System::cpu_arch(),
+            rust_version: env!("RUSTC_VERSION"),
             uptime_seconds: System::uptime(),
             load_avg_one: load.one,
             load_avg_five: load.five,
@@ -108,6 +126,40 @@ impl SystemHeader {
         } else {
             format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
         }
+    }
+
+    /// Produces the content lines to be framed inside the box
+    pub fn render_lines(&self) -> Vec<BoxLine> {
+        vec![
+            BoxLine::Split(
+                format!("{CYAN}OS:{RESET} {} {} ({})",
+                        self.os_name,
+                        self.kernel_version,
+                        self.architecture,
+                ),
+                format!("{CYAN}Uptime:{RESET} {}  {BLUE}|{RESET}  {CYAN}Load Avg:{RESET} {:.2}, {:.2}, {:.2}",
+                        self.format_uptime(),
+                        self.load_avg_one,
+                        self.load_avg_five,
+                        self.load_avg_fifteen
+                ),
+            ),
+            BoxLine::Left(
+                format!("{CYAN}Rust:{RESET} {}", self.rust_version)
+            ),
+        ]
+    }
+    pub fn display(&self, width: usize) -> Vec<String> {
+        let lines = self.render_lines();
+        let title = format!("{MAGENTA}{} ({}){RESET}", self.host_name, self.kernel_version);
+
+        let style = BoxStyle {
+            color_code: BLUE,
+            title: Box::leak(title.into_boxed_str()), // Or update BoxStyle::title to accept &str / String
+            width,
+        };
+
+        render_box_advanced(&lines, &style)
     }
 }
 
@@ -259,7 +311,7 @@ impl Processes {}
 
 //// ====== HELPER FUNCTIONS ======
 /// Format Bytes
-fn format_bytes(bytes: u64) -> String {
+pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
 
 
@@ -359,6 +411,25 @@ pub fn render_sparkline(history: &VecDeque<f64>, width: usize, mode: ColorMode, 
     result
 }
 
+/// Returns the current terminal width in character columns,
+/// or falls back to `default_width` if the terminal cannot be queried.
+pub fn get_terminal_width(default_width: usize) -> usize {
+    if let Some((Width(w), Height(_))) = terminal_size() {
+        w as usize
+    } else {
+        default_width
+    }
+}
+
+/// Returns both (width, height) in columns and rows
+pub fn get_terminal_dimensions() -> (usize, usize) {
+    if let Some((Width(w), Height(h))) = terminal_size() {
+        (w as usize, h as usize)
+    } else {
+        (100, 30) // Default fallback
+    }
+}
+
 pub struct BoxStyle {
     color_code: &'static str,
     title: &'static str,
@@ -376,9 +447,9 @@ pub fn render_box(lines: &[String], style: &BoxStyle) -> Vec<String> {
         format!(" {} ", style.title)
     };
 
-    let title_char_len = title_segment.chars().count();
+    let title_char_len = strip_ansi_len(&title_segment);
     let border_space = width.saturating_sub(2 + title_char_len);
-    let left_dashes = 3.min(border_space);
+    let left_dashes = border_space / 2;
     let right_dashes = border_space.saturating_sub(left_dashes);
 
     let top_border = format!(
@@ -405,6 +476,58 @@ pub fn render_box(lines: &[String], style: &BoxStyle) -> Vec<String> {
         "─".repeat(width.saturating_sub(2))
     );
     output.push(bottom_border);
+
+    output
+}
+
+pub enum BoxLine {
+    Left(String),
+    Center(String),
+    Right(String),
+    Split(String, String), // Left text, Right text
+}
+
+pub fn render_box_advanced(lines: &[BoxLine], style: &BoxStyle) -> Vec<String> {
+    const RESET: &str = "\x1b[0m";
+    let color = style.color_code;
+    let width = style.width;
+    let inner_width = width.saturating_sub(2);
+
+    let mut output = Vec::new();
+
+    let title_segment = if style.title.is_empty() {
+        String::new()
+    } else {
+        format!(" {} ", style.title)
+    };
+    let title_char_len = strip_ansi_len(&title_segment);
+    let border_space = width.saturating_sub(2 + title_char_len);
+    let left_dashes = border_space / 2;
+    let right_dashes = border_space.saturating_sub(left_dashes);
+
+    output.push(format!(
+        "{color}╭{}{}{title_segment}{color}{}╮{RESET}",
+        "─".repeat(left_dashes),
+        RESET,
+        "─".repeat(right_dashes)
+    ));
+
+    for line in lines {
+        let formatted_content = match line {
+            BoxLine::Left(text) => pad_aligned(text, inner_width, Alignment::Left),
+            BoxLine::Center(text) => pad_aligned(text, inner_width, Alignment::Center),
+            BoxLine::Right(text) => pad_aligned(text, inner_width, Alignment::Right),
+            BoxLine::Split(left, right) => justify_split(left, right, inner_width),
+        };
+
+        output.push(format!("{color}│{RESET}{}{color}│{RESET}", formatted_content));
+    }
+
+    // 3. Build Bottom Border
+    output.push(format!(
+        "{color}╰{}╯{RESET}",
+        "─".repeat(width.saturating_sub(2))
+    ));
 
     output
 }
@@ -437,4 +560,47 @@ pub fn print_columns(left_box: &[String], right_box: &[String]) {
 
         println!("{}  {}", left_str, right_str);
     }
+}
+
+pub enum Alignment {
+    Left,
+    Center,
+    Right,
+}
+
+/// Pads a formatted string inside a target width according to the alignment.
+pub fn pad_aligned(text: &str, target_width: usize, align: Alignment) -> String {
+    let visible_len = strip_ansi_len(text);
+    let total_padding = target_width.saturating_sub(visible_len);
+
+    match align {
+        Alignment::Left => {
+            // 1-space left margin, remainder on right
+            let left_pad = 1.min(total_padding);
+            let right_pad = total_padding.saturating_sub(left_pad);
+            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
+        }
+        Alignment::Center => {
+            let left_pad = total_padding / 2;
+            let right_pad = total_padding.saturating_sub(left_pad);
+            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
+        }
+        Alignment::Right => {
+            // Remainder on left, 1-space right margin
+            let right_pad = 1.min(total_padding);
+            let left_pad = total_padding.saturating_sub(right_pad);
+            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
+        }
+    }
+}
+
+/// Pushes `left` to the left edge and `right` against the right edge.
+pub fn justify_split(left: &str, right: &str, inner_width: usize) -> String {
+    let left_len = strip_ansi_len(left);
+    let right_len = strip_ansi_len(right);
+
+    // Leave a 1-character margin on both left and right edges
+    let available_middle = inner_width.saturating_sub(left_len + right_len + 2);
+
+    format!(" {}{}{} ", left, " ".repeat(available_middle), right)
 }
