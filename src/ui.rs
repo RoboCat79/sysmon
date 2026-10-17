@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::collections::VecDeque;
 
 // ANSI Escape Codes
@@ -54,6 +55,29 @@ pub fn resolve_color(mode: ColorMode, percent: f64) -> String {
     }
 }
 
+/// Resolves an ANSI color escape sequence for temperature (°C).
+/// Green under 70°C, Yellow from 70°C to 79°C, and Red at 80°C and above.
+pub fn resolve_temp_color(temp_c: f32) -> &'static str {
+    if temp_c >= 80.0 {
+        RED
+    } else if temp_c >= 70.0 {
+        YELLOW
+    } else {
+        GREEN
+    }
+}
+
+/// Resolves an ANSI color based on custom warning and critical temperature thresholds.
+pub fn resolve_temp_color_custom(temp_c: f32, warn_threshold: f32, crit_threshold: f32) -> &'static str {
+    if temp_c >= crit_threshold {
+        RED
+    } else if temp_c >= warn_threshold {
+        YELLOW
+    } else {
+        GREEN
+    }
+}
+
 /// Measures printable length ignoring ANSI color escape sequences.
 pub fn strip_ansi_len(s: &str) -> usize {
     let mut in_escape = false;
@@ -77,14 +101,14 @@ pub fn strip_ansi_len(s: &str) -> usize {
 pub fn render_bar(percent: f64, width: usize, mode: ColorMode, track_char: char) -> String {
     let clamped = percent.clamp(0.0, 100.0);
     let filled_len = ((clamped / 100.0) * width as f64).round() as usize;
-    let empty_len = width - filled_len;
+    let empty_len = width.saturating_sub(filled_len);
 
     let color = resolve_color(mode, clamped);
-
     let filled_str = "█".repeat(filled_len);
+
     let empty_str: String = std::iter::repeat(track_char).take(empty_len).collect();
 
-    format!("{color}{filled_str}{RESET}{empty_str}")
+    format!("{color}{filled_str}{empty_str}{RESET}")
 }
 
 /// Renders a sparkline histogram.
@@ -122,7 +146,7 @@ pub fn pad_aligned(text: &str, target_width: usize, align: Alignment) -> String 
 
     match align {
         Alignment::Left => {
-            let left_pad = 1.min(total_padding);
+            let left_pad = 1;
             let right_pad = total_padding.saturating_sub(left_pad);
             format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
         }
@@ -132,7 +156,7 @@ pub fn pad_aligned(text: &str, target_width: usize, align: Alignment) -> String 
             format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
         }
         Alignment::Right => {
-            let right_pad = 1.min(total_padding);
+            let right_pad = 1;
             let left_pad = total_padding.saturating_sub(right_pad);
             format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
         }
@@ -146,6 +170,13 @@ pub fn justify_split(left: &str, right: &str, inner_width: usize) -> String {
     let available_middle = inner_width.saturating_sub(left_len + right_len + 2);
 
     format!(" {}{}{} ", left, " ".repeat(available_middle), right)
+}
+
+/// Formats a percentage string with ANSI dynamic threshold coloring.
+/// e.g. " 1.9%" or "72.4%" in green/yellow/red.
+pub fn format_percent(percent: f64, width: usize, precision: usize) -> String {
+    let color = resolve_color(ColorMode::DynamicThreshold, percent);
+    format!("{color}{:width$.precision$}%{RESET}", percent, width = width, precision = precision)
 }
 
 /// Formats raw bytes into human-readable B, KB, MB, GB, or TB.
@@ -222,4 +253,28 @@ pub fn print_columns(left_box: &[String], right_box: &[String]) {
 
         println!("{}  {}", left_str, right_str);
     }
+}
+
+/// Clears screen and homes the cursor to row 1, col 1
+pub fn clear_and_home() {
+    print!("\x1b[2J\x1b[H");
+    let _ = io::stdout().flush();
+}
+
+/// Moves cursor to row 1, col 1 without clearing (prevents flicker)
+pub fn cursor_home() {
+    print!("\x1b[H");
+    let _ = io::stdout().flush();
+}
+
+/// Hides the terminal cursor
+pub fn hide_cursor() {
+    print!("\x1b[?25l");
+    let _ = io::stdout().flush();
+}
+
+/// Restores the terminal cursor (essential before exiting)
+pub fn show_cursor() {
+    print!("\x1b[?25h");
+    let _ = io::stdout().flush();
 }
