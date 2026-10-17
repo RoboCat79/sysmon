@@ -4,8 +4,18 @@ use std::thread;
 use std::time::Duration;
 use std::collections::VecDeque;
 
-fn main() {
+mod ui;
+use ui::{
+    render_bar, render_box, render_sparkline, print_columns, format_bytes,
+    BoxLine, BoxStyle, ColorMode, Alignment,
+    RESET, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, DARK_GRAY,
+};
 
+fn main() {
+    let mut sysmon = SystemMonitor::new();
+    for line in sysmon.display() {
+        println!("{}", line);
+    }
 }
 
 //// ====== System Monitor ======
@@ -57,10 +67,13 @@ impl SystemMonitor {
         self.memory.update(&self.sys);
     }
 
-    pub fn display(&mut self) {
-        //self.header.display(get_terminal_width(64));
-        //self.cpu.display();
-        //self.memory.display();
+    pub fn display(&mut self) -> Vec<String> {
+        let width = get_terminal_width(80);
+        let mut lines = Vec::new();
+
+        lines.extend(self.header.display(width));
+
+        lines
     }
 }
 
@@ -149,17 +162,18 @@ impl SystemHeader {
             ),
         ]
     }
+
     pub fn display(&self, width: usize) -> Vec<String> {
         let lines = self.render_lines();
         let title = format!("{MAGENTA}{} ({}){RESET}", self.host_name, self.kernel_version);
 
         let style = BoxStyle {
             color_code: BLUE,
-            title: Box::leak(title.into_boxed_str()), // Or update BoxStyle::title to accept &str / String
+            title: Box::leak(title.into_boxed_str()).to_string(), // Or update BoxStyle::title to accept &str / String
             width,
         };
 
-        render_box_advanced(&lines, &style)
+        render_box(&lines, &style)
     }
 }
 
@@ -310,107 +324,6 @@ struct Processes {}
 impl Processes {}
 
 //// ====== HELPER FUNCTIONS ======
-/// Format Bytes
-pub fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-
-
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-
-    while size > 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-
-    if unit_index == 0 {
-        format!("{:.0} {}", size, UNITS[unit_index])
-    } else {
-        format!("{:.2} {}", size, UNITS[unit_index - 1])
-    }
-}
-
-//// === Render Helpers ===
-const RESET: &str = "\x1b[0m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const RED: &str = "\x1b[31m";
-const CYAN: &str = "\x1b[36m";
-const BLUE: &str = "\x1b[34m";
-const MAGENTA: &str = "\x1b[35m";
-const WHITE: &str = "\x1b[37m";
-const DARK_GRAY: &str = "\x1b[90m";
-
-#[derive(Clone, Copy)]
-pub enum ColorMode {
-    // Changes color dynamically based on load thresholds
-    DynamicThreshold,
-
-    // Fixed static color regardless of percentage
-    Fixed(&'static str),
-
-    // Custom 24-bit TrueColor RGB: FixedRgb(r, g, b)
-    FixedRgb(u8, u8, u8),
-}
-fn resolve_color(mode: ColorMode, percent: f64) -> String {
-    match mode {
-        ColorMode::DynamicThreshold => {
-            if percent >= 95.0 {
-                RED.to_string()
-            } else if percent >= 70.0 {
-                YELLOW.to_string()
-            } else {
-                GREEN.to_string()
-            }
-        }
-        ColorMode::Fixed(ansi) => ansi.to_string(),
-        ColorMode::FixedRgb(r, g, b) => format!("\x1b[38;2;{};{};{}m", r, g, b),
-    }
-}
-
-/// Renders a horizontal bar of a fixed character width
-/// `percent`: value from 0.0 tp 100.0
-/// `width`: numbre of chracters wide the bar should be
-pub fn render_bar(percent: f64, width: usize, mode: ColorMode, track_char: char) -> String {
-    let clamped = percent.clamp(0.0, 100.0);
-    let filled_len = ((clamped / 100.0) * width as f64).round() as usize;
-    let empty_len = width - filled_len;
-
-    let color = resolve_color(mode, clamped);
-
-    let filled_str = "█".repeat(filled_len);
-    let empty_str: String = std::iter::repeat(track_char).take(empty_len).collect();
-
-    format!("{color}{filled_str}{DARK_GRAY}{empty_str}{RESET}")
-}
-
-/// Renders a sparkline / histogram string from a history slice.
-/// Takes values between 0.0 and 100.0.
-pub fn render_sparkline(history: &VecDeque<f64>, width: usize, mode: ColorMode, pad_char: char) -> String {
-    const SPARK_CHARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-
-    let mut result = String::with_capacity(width);
-
-    if history.len() < width {
-        let pad_len = width - history.len();
-        let pad_str: String = std::iter::repeat(pad_char).take(pad_len).collect();
-        result.push_str(&format!("{DARK_GRAY}{pad_str}{RESET}"))
-    }
-
-    let start_idx = history.len().saturating_sub(width);
-    for &val in history.range(start_idx..) {
-        let clamped = val.clamp(0.0, 100.0);
-
-        let index = (((clamped / 100.0) * 7.0).round() as usize).min(7);
-        let color = resolve_color(mode, clamped);
-        result.push_str(&format!("{color}{}{RESET}", SPARK_CHARS[index]));
-    }
-
-    result
-}
-
 /// Returns the current terminal width in character columns,
 /// or falls back to `default_width` if the terminal cannot be queried.
 pub fn get_terminal_width(default_width: usize) -> usize {
@@ -428,179 +341,4 @@ pub fn get_terminal_dimensions() -> (usize, usize) {
     } else {
         (100, 30) // Default fallback
     }
-}
-
-pub struct BoxStyle {
-    color_code: &'static str,
-    title: &'static str,
-    width: usize,
-}
-pub fn render_box(lines: &[String], style: &BoxStyle) -> Vec<String> {
-    let color = style.color_code;
-    let width = style.width;
-
-    let mut output = Vec::new();
-
-    let title_segment = if style.title.is_empty() {
-        String::new()
-    } else {
-        format!(" {} ", style.title)
-    };
-
-    let title_char_len = strip_ansi_len(&title_segment);
-    let border_space = width.saturating_sub(2 + title_char_len);
-    let left_dashes = border_space / 2;
-    let right_dashes = border_space.saturating_sub(left_dashes);
-
-    let top_border = format!(
-        "{color}╭{}{title_segment}{}╮{RESET}",
-        "─".repeat(left_dashes),
-        format!("{color}{}", "─".repeat(right_dashes))
-    );
-    output.push(top_border);
-
-    for line in lines {
-        let visible_len = strip_ansi_len(line);
-        let inner_width = width.saturating_sub(2);
-        let padding_needed = inner_width.saturating_sub(visible_len);
-
-        output.push(format!(
-            "{color}│{RESET} {}{}{color}│{RESET}",
-            line,
-            " ".repeat(padding_needed.saturating_sub(1))
-        ));
-    }
-
-    let bottom_border = format!(
-        "{color}╰{}╯{RESET}",
-        "─".repeat(width.saturating_sub(2))
-    );
-    output.push(bottom_border);
-
-    output
-}
-
-pub enum BoxLine {
-    Left(String),
-    Center(String),
-    Right(String),
-    Split(String, String), // Left text, Right text
-}
-
-pub fn render_box_advanced(lines: &[BoxLine], style: &BoxStyle) -> Vec<String> {
-    const RESET: &str = "\x1b[0m";
-    let color = style.color_code;
-    let width = style.width;
-    let inner_width = width.saturating_sub(2);
-
-    let mut output = Vec::new();
-
-    let title_segment = if style.title.is_empty() {
-        String::new()
-    } else {
-        format!(" {} ", style.title)
-    };
-    let title_char_len = strip_ansi_len(&title_segment);
-    let border_space = width.saturating_sub(2 + title_char_len);
-    let left_dashes = border_space / 2;
-    let right_dashes = border_space.saturating_sub(left_dashes);
-
-    output.push(format!(
-        "{color}╭{}{}{title_segment}{color}{}╮{RESET}",
-        "─".repeat(left_dashes),
-        RESET,
-        "─".repeat(right_dashes)
-    ));
-
-    for line in lines {
-        let formatted_content = match line {
-            BoxLine::Left(text) => pad_aligned(text, inner_width, Alignment::Left),
-            BoxLine::Center(text) => pad_aligned(text, inner_width, Alignment::Center),
-            BoxLine::Right(text) => pad_aligned(text, inner_width, Alignment::Right),
-            BoxLine::Split(left, right) => justify_split(left, right, inner_width),
-        };
-
-        output.push(format!("{color}│{RESET}{}{color}│{RESET}", formatted_content));
-    }
-
-    // 3. Build Bottom Border
-    output.push(format!(
-        "{color}╰{}╯{RESET}",
-        "─".repeat(width.saturating_sub(2))
-    ));
-
-    output
-}
-
-/// Count visible character length ignoring ANSI color escape sequences
-fn strip_ansi_len(s: &str) -> usize {
-    let mut in_escape = false;
-    let mut count = 0;
-
-    for c in s.chars() {
-        if c == '\x1b' {
-            in_escape = true;
-        } else if in_escape {
-            if c == 'm' {
-                in_escape = false;
-            }
-        } else {
-            count += 1;
-        }
-    }
-    count
-}
-
-pub fn print_columns(left_box: &[String], right_box: &[String]) {
-    let max_lines = left_box.len().max(right_box.len());
-
-    for i in 0..max_lines {
-        let left_str = left_box.get(i).map(|s| s.as_str()).unwrap_or("");
-        let right_str = right_box.get(i).map(|s| s.as_str()).unwrap_or("");
-
-        println!("{}  {}", left_str, right_str);
-    }
-}
-
-pub enum Alignment {
-    Left,
-    Center,
-    Right,
-}
-
-/// Pads a formatted string inside a target width according to the alignment.
-pub fn pad_aligned(text: &str, target_width: usize, align: Alignment) -> String {
-    let visible_len = strip_ansi_len(text);
-    let total_padding = target_width.saturating_sub(visible_len);
-
-    match align {
-        Alignment::Left => {
-            // 1-space left margin, remainder on right
-            let left_pad = 1.min(total_padding);
-            let right_pad = total_padding.saturating_sub(left_pad);
-            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
-        }
-        Alignment::Center => {
-            let left_pad = total_padding / 2;
-            let right_pad = total_padding.saturating_sub(left_pad);
-            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
-        }
-        Alignment::Right => {
-            // Remainder on left, 1-space right margin
-            let right_pad = 1.min(total_padding);
-            let left_pad = total_padding.saturating_sub(right_pad);
-            format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
-        }
-    }
-}
-
-/// Pushes `left` to the left edge and `right` against the right edge.
-pub fn justify_split(left: &str, right: &str, inner_width: usize) -> String {
-    let left_len = strip_ansi_len(left);
-    let right_len = strip_ansi_len(right);
-
-    // Leave a 1-character margin on both left and right edges
-    let available_middle = inner_width.saturating_sub(left_len + right_len + 2);
-
-    format!(" {}{}{} ", left, " ".repeat(available_middle), right)
 }
