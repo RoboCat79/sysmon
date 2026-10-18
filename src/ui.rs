@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::collections::VecDeque;
+use terminal_size::{terminal_size, Height, Width};
 
 // ANSI Escape Codes
 pub const RESET: &str = "\x1b[0m";
@@ -252,6 +253,25 @@ pub fn print_columns(left_box: &[String], right_box: &[String]) {
         let right_str = right_box.get(i).map(|s| s.as_str()).unwrap_or("");
 
         println!("{}  {}", left_str, right_str);
+    }
+}
+
+/// Returns the current terminal width in character columns,
+/// or falls back to `default_width` if the terminal cannot be queried.
+pub fn get_terminal_width(default_width: usize) -> usize {
+    if let Some((Width(w), Height(_))) = terminal_size() {
+        w as usize
+    } else {
+        default_width
+    }
+}
+
+/// Returns both (width, height) in columns and rows
+pub fn get_terminal_dimensions() -> (usize, usize) {
+    if let Some((Width(w), Height(h))) = terminal_size() {
+        (w as usize, h as usize)
+    } else {
+        (100, 30) // Default fallback
     }
 }
 
