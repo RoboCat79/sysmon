@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration};
-use sysinfo::{Components, System};
+use sysinfo::{Components, Networks, System};
 use terminal_size::{Height, Width, terminal_size};
 
 mod ui;
@@ -70,37 +70,42 @@ fn main() {
 pub struct SystemMonitor {
     pub system: System,
     pub components: Components,
+    pub networks: Networks,
+
     pub header: Header,
     pub cpu: CPU,
     pub memory: Memory,
     pub gpu: GPU,
     // pub cooling: Cooling,
-    // pub network: Network,
+    pub network: Network,
     pub storage: Storage,
     // pub processes: Processes,
 }
 
 impl SystemMonitor {
     pub fn new() -> Self {
-        let mut sys = System::new_all();
+        let mut system = System::new_all();
         let mut components = Components::new_with_refreshed_list();
+        let networks = Networks::new_with_refreshed_list();
 
-        sys.refresh_cpu_all();
+        system.refresh_cpu_all();
         thread::sleep(Duration::from_millis(200));
-        sys.refresh_all();
+        system.refresh_all();
         components.refresh(true);
 
         Self {
             header: Header::new(),
-            cpu: CPU::new(&sys, &components),
-            memory: Memory::new(&sys),
+            cpu: CPU::new(&system, &components),
+            memory: Memory::new(&system),
             gpu: GPU::new(),
             // cooling: Default::default(),
-            // network: Default::default(),
+            network: Network::new(&networks),
             storage: Storage::new(),
             // processes: Default::default(),
-            system: sys,
+
+            system,
             components,
+            networks,
         }
     }
 
@@ -108,6 +113,7 @@ impl SystemMonitor {
         // Refresh sysinfo data
         self.system.refresh_all();
         self.components.refresh(true);
+        self.networks.refresh(true);
 
         // Update each component
         self.header.update();
@@ -115,6 +121,7 @@ impl SystemMonitor {
         self.memory.update(&self.system);
         self.storage.update();
         self.gpu.update();
+        self.network.update(&self.networks);
     }
 
     pub fn display(&mut self) -> Vec<String> {
@@ -127,12 +134,16 @@ impl SystemMonitor {
         let left_width = (term_width.saturating_sub(col_gap)) / 2;
         let right_width = term_width.saturating_sub(left_width + col_gap);
 
-        let left_box = self.cpu.display(left_width);
-        let mut right_box = self.memory.display(right_width);
-        right_box.extend(self.storage.display(right_width));
-        lines.extend(box_columns(&left_box, &right_box, left_width));
+        let left_box_t = self.cpu.display(left_width);
+        let mut right_box_t = self.memory.display(right_width);
+        right_box_t.extend(self.storage.display(right_width));
+        lines.extend(box_columns(&left_box_t, &right_box_t, left_width));
 
         lines.extend(self.gpu.display(term_width));
+
+        let left_box_b = self.network.display(left_width);
+
+        lines.extend(left_box_b);
 
         lines
     }

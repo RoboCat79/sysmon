@@ -117,7 +117,7 @@ impl CPU {
 
         let cpu_bar = render_bar(
             global_usage_f64,
-            dynamic_bar_width - 1,
+            dynamic_bar_width,
             ColorMode::DynamicThreshold,
             '░',
         );

@@ -86,6 +86,50 @@ pub fn resolve_temp_color_custom(temp_c: f32, warn_threshold: f32, crit_threshol
     }
 }
 
+/// Formats a percentage string with ANSI dynamic threshold coloring.
+pub fn format_percent(percent: f64, width: usize, precision: usize) -> String {
+    let color = resolve_color(ColorMode::DynamicThreshold, percent);
+    format!("{color}{:width$.precision$}%{RESET}", percent, width = width, precision = precision)
+}
+
+/// Formats byte rates into human-readable transfer speeds
+pub fn format_rate(bytes_per_sec: f64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+
+    if bytes_per_sec >= GB {
+        format!("{:5.1} GB/s", bytes_per_sec / GB)
+    } else if bytes_per_sec >= MB {
+        format!("{:5.1} MB/s", bytes_per_sec / MB)
+    } else if bytes_per_sec >= KB {
+        format!("{:5.1} KB/s", bytes_per_sec / KB)
+    } else {
+        format!("{:5.0}  B/s", bytes_per_sec)
+    }
+}
+
+/// Formats raw bytes into human-readable B, KB, MB, GB, or TB.
+pub fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    const TB: f64 = GB * 1024.0;
+
+    let b = bytes as f64;
+    if b >= TB {
+        format!("{:.1} TB", b / TB)
+    } else if b >= GB {
+        format!("{:.1} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 /// Measures printable length ignoring ANSI color escape sequences.
 pub fn strip_ansi_len(s: &str) -> usize {
     let mut in_escape = false;
@@ -135,13 +179,10 @@ pub fn render_sparkline(history: &VecDeque<f64>, width: usize, mode: ColorMode, 
     for &val in history.range(start_idx..) {
         let clamped = val.clamp(0.0, 100.0);
 
-        if clamped < 1.0 {
-            result.push_str(&format!("{DARK_GRAY}{pad_char}{RESET}"));
-        } else {
-            let index = (((clamped / 100.0) * 7.0).round() as usize).min(7);
-            let color = resolve_color(mode, clamped);
-            result.push_str(&format!("{color}{}{RESET}", SPARK_CHARS[index]));
-        }
+        let index = (((clamped / 100.0) * 7.0).round() as usize).min(7);
+        let color = resolve_color(mode, clamped);
+        result.push_str(&format!("{color}{}{RESET}", SPARK_CHARS[index]));
+
     }
 
     result
@@ -178,34 +219,6 @@ pub fn justify_split(left: &str, right: &str, inner_width: usize) -> String {
     let available_middle = inner_width.saturating_sub(left_len + right_len + 2);
 
     format!(" {}{}{} ", left, " ".repeat(available_middle), right)
-}
-
-/// Formats a percentage string with ANSI dynamic threshold coloring.
-/// e.g. " 1.9%" or "72.4%" in green/yellow/red.
-pub fn format_percent(percent: f64, width: usize, precision: usize) -> String {
-    let color = resolve_color(ColorMode::DynamicThreshold, percent);
-    format!("{color}{:width$.precision$}%{RESET}", percent, width = width, precision = precision)
-}
-
-/// Formats raw bytes into human-readable B, KB, MB, GB, or TB.
-pub fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    const TB: f64 = GB * 1024.0;
-
-    let b = bytes as f64;
-    if b >= TB {
-        format!("{:.1} TB", b / TB)
-    } else if b >= GB {
-        format!("{:.1} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.1} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 /// Renders lines into a rounded, colored box with a centered title.

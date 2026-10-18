@@ -109,7 +109,7 @@ impl Memory {
 
         let ram_bar = render_bar(
             self.ram_percent,
-            dynamic_bar_width.saturating_sub(1),
+            dynamic_bar_width,
             ColorMode::DynamicThreshold,
             '░',
         );
@@ -148,7 +148,7 @@ impl Memory {
 
         let swap_bar = render_bar(
             self.swap_percent,
-            swap_bar_width.saturating_sub(1),
+            swap_bar_width,
             ColorMode::DynamicThreshold,
             '░',
         );
