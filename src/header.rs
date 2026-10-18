@@ -1,9 +1,6 @@
 use sysinfo::System;
-use crate::ui::{
-    BoxLine, BoxStyle,
-    RESET, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, DARK_GRAY,
-    render_box
-};
+use crate::ui::{render_box, BoxLine, BoxStyle, RESET, BLUE, BOLD, BOLD_CYAN, BOLD_MAGENTA};
+const HEADER_COLOR: &str = BLUE;
 
 #[derive(Debug)]
 pub struct Header {
@@ -53,8 +50,43 @@ impl Header {
         self.load_avg_fifteen = load.fifteen;
     }
 
+    pub fn display(&self, width: usize) -> Vec<String> {
+        let lines = self.render_lines();
+        let title = format!("{BOLD_MAGENTA}{} ({}){RESET}", self.host_name, self.kernel_version);
+
+        let style = BoxStyle {
+            color_code: HEADER_COLOR,
+            title: Box::leak(title.into_boxed_str()).to_string(), // Or update BoxStyle::title to accept &str / String
+            width,
+        };
+
+        render_box(&lines, &style)
+    }
+
+    /// Produces the content lines to be framed inside the box
+    fn render_lines(&self) -> Vec<BoxLine> {
+        vec![
+            BoxLine::Split(
+                format!("{BOLD_CYAN}OS:{RESET} {} {} ({})",
+                        self.os_name,
+                        self.kernel_version,
+                        self.architecture,
+                ),
+                format!("{BOLD_CYAN}Uptime:{RESET} {}  {BLUE}|{RESET}  {BOLD_CYAN}Load Avg:{RESET} {:.2}, {:.2}, {:.2}",
+                        self.format_uptime(),
+                        self.load_avg_one,
+                        self.load_avg_five,
+                        self.load_avg_fifteen
+                ),
+            ),
+            BoxLine::Left(
+                format!("{BOLD_CYAN}Rust:{RESET} {}", self.rust_version)
+            ),
+        ]
+    }
+
     /// Format Uptime to DD:HH:MM:SS
-    pub fn format_uptime(&self) -> String {
+    fn format_uptime(&self) -> String {
         let days = self.uptime_seconds / 86400;
         let hours = (self.uptime_seconds % 86400) / 3600;
         let minutes = (self.uptime_seconds % 3600) / 60;
@@ -65,40 +97,5 @@ impl Header {
         } else {
             format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
         }
-    }
-
-    /// Produces the content lines to be framed inside the box
-    pub fn render_lines(&self) -> Vec<BoxLine> {
-        vec![
-            BoxLine::Split(
-                format!("{CYAN}OS:{RESET} {} {} ({})",
-                        self.os_name,
-                        self.kernel_version,
-                        self.architecture,
-                ),
-                format!("{CYAN}Uptime:{RESET} {}  {BLUE}|{RESET}  {CYAN}Load Avg:{RESET} {:.2}, {:.2}, {:.2}",
-                        self.format_uptime(),
-                        self.load_avg_one,
-                        self.load_avg_five,
-                        self.load_avg_fifteen
-                ),
-            ),
-            BoxLine::Left(
-                format!("{CYAN}Rust:{RESET} {}", self.rust_version)
-            ),
-        ]
-    }
-
-    pub fn display(&self, width: usize) -> Vec<String> {
-        let lines = self.render_lines();
-        let title = format!("{MAGENTA}{} ({}){RESET}", self.host_name, self.kernel_version);
-
-        let style = BoxStyle {
-            color_code: BLUE,
-            title: Box::leak(title.into_boxed_str()).to_string(), // Or update BoxStyle::title to accept &str / String
-            width,
-        };
-
-        render_box(&lines, &style)
     }
 }

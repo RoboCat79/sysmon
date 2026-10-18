@@ -7,7 +7,7 @@ use crate::REFRESH_SPARKLINE;
 use crate::ui::{
     render_bar, render_box, render_sparkline, format_percent,
     BoxLine, BoxStyle, ColorMode, resolve_temp_color, strip_ansi_len,
-    RESET, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, DARK_GRAY,
+    RESET, GREEN, BOLD, BOLD_YELLOW,
 };
 
 const CPU_COLOR: &str = GREEN;
@@ -78,9 +78,14 @@ impl CPU {
         let inner_width = width.saturating_sub(2);
         let lines = self.render_lines(inner_width);
 
+        let title = format!(
+            "{BOLD}{CPU_COLOR}{}{RESET}",
+            self.name,
+        );
+
         let style = BoxStyle {
             color_code: CPU_COLOR,
-            title: format!("{CPU_COLOR}{}{RESET}", self.name.clone()),
+            title,
             width,
         };
 
@@ -105,7 +110,7 @@ impl CPU {
 
         let global_usage_f64 = self.global_usage as f64;
         let global_pct_str = format_percent(global_usage_f64, 5, 1);
-        let prefix = format!("{YELLOW}CPU Usage:{RESET} {} ", global_pct_str);
+        let prefix = format!("{BOLD_YELLOW}CPU Usage:{RESET} {} ", global_pct_str);
         let prefix_len = strip_ansi_len(&prefix);
 
         let dynamic_bar_width = content_width.saturating_sub(prefix_len).max(5);
@@ -118,7 +123,7 @@ impl CPU {
         );
         lines.push(BoxLine::Left(format!("{}{}", prefix, cpu_bar)));
 
-        let trend_label = format!("{YELLOW}CPU Trend:{RESET} ");
+        let trend_label = format!("{BOLD_YELLOW}CPU Trend:{RESET} ");
         let trend_label_len = strip_ansi_len(&trend_label);
         let trend_padding = prefix_len.saturating_sub(trend_label_len);
 

@@ -76,7 +76,7 @@ pub struct SystemMonitor {
     // pub gpu: GPU,
     // pub cooling: Cooling,
     // pub network: Network,
-    // pub storage: Storage,
+    pub storage: Storage,
     // pub processes: Processes,
 }
 
@@ -97,7 +97,7 @@ impl SystemMonitor {
             // gpu: Default::default(),
             // cooling: Default::default(),
             // network: Default::default(),
-            // storage: Default::default(),
+            storage: Storage::new(),
             // processes: Default::default(),
             system: sys,
             components,
@@ -113,6 +113,7 @@ impl SystemMonitor {
         self.header.update();
         self.cpu.update(&self.system, &self.components);
         self.memory.update(&self.system);
+        self.storage.update();
     }
 
     pub fn display(&mut self) -> Vec<String> {
@@ -125,10 +126,11 @@ impl SystemMonitor {
         let left_width = (term_width.saturating_sub(col_gap)) / 2;
         let right_width = term_width.saturating_sub(left_width + col_gap);
 
-        let cpu_box = self.cpu.display(left_width);
-        let mem_box = self.memory.display(right_width);
+        let left_box = self.cpu.display(left_width);
+        let mut right_box = self.memory.display(right_width);
+        right_box.extend(self.storage.display(right_width));
 
-        lines.extend(box_columns(&cpu_box, &mem_box, left_width));
+        lines.extend(box_columns(&left_box, &right_box, left_width));
 
         lines
     }
