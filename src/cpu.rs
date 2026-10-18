@@ -2,13 +2,17 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use sysinfo::{Components, System};
 
-use crate::REFRESH_SPARKLINE;
 use crate::MAX_HISTORY_LEN;
+use crate::REFRESH_SPARKLINE;
 use crate::ui::{
     render_bar, render_box, render_sparkline, format_percent,
     BoxLine, BoxStyle, ColorMode, resolve_temp_color, strip_ansi_len,
     RESET, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, DARK_GRAY,
 };
+
+const CPU_COLOR: &str = GREEN;
+const NUM_CORE_COLS: usize = 3;
+const NUM_CORE_GAP: usize = 2;
 
 #[derive(Debug)]
 pub struct CPU {
@@ -37,7 +41,6 @@ impl CPU {
 
         let physical_cores = System::physical_core_count().unwrap_or(0);
         let logical_cores = sys.cpus().len();
-
         let max_history_len = MAX_HISTORY_LEN;
 
         let mut cpu = Self {
@@ -68,28 +71,44 @@ impl CPU {
         }
 
         self.temperature_c = Self::get_temperature_c(components);
-
-        let now = Instant::now();
-        if now.duration_since(self.last_history_sample) >= self.history_interval {
-            self.usage_history.push_back(self.global_usage as f64);
-            if self.usage_history.len() > self.max_history_len {
-                self.usage_history.pop_front();
-            }
-            self.last_history_sample = now;
-        }
+        self.record_history_sample();
     }
 
-    pub fn render_lines(&self, inner_width: usize) -> Vec<BoxLine> {
+    pub fn display(&self, width: usize) -> Vec<String> {
+        let inner_width = width.saturating_sub(2);
+        let lines = self.render_lines(inner_width);
+
+        let style = BoxStyle {
+            color_code: CPU_COLOR,
+            title: format!("{CPU_COLOR}{}{RESET}", self.name.clone()),
+            width,
+        };
+
+        render_box(&lines, &style)
+    }
+
+    fn render_lines(&self, inner_width: usize) -> Vec<BoxLine> {
+        let content_width = inner_width.saturating_sub(2);
         let mut lines = Vec::new();
 
-        let content_width = inner_width.saturating_sub(2);
+        lines.extend(self.render_summary(content_width));
+
+        lines.push(BoxLine::Left(String::new()));
+
+        lines.extend(self.render_core_grid(content_width, NUM_CORE_COLS, NUM_CORE_GAP));
+
+        lines
+    }
+
+    fn render_summary(&self, content_width: usize) -> Vec<BoxLine> {
+        let mut lines = Vec::new();
 
         let global_usage_f64 = self.global_usage as f64;
         let global_pct_str = format_percent(global_usage_f64, 5, 1);
         let prefix = format!("{YELLOW}CPU Usage:{RESET} {} ", global_pct_str);
         let prefix_len = strip_ansi_len(&prefix);
 
-        let dynamic_bar_width = inner_width.saturating_sub(prefix_len + 1).max(5);
+        let dynamic_bar_width = content_width.saturating_sub(prefix_len).max(5);
 
         let cpu_bar = render_bar(
             global_usage_f64,
@@ -115,7 +134,7 @@ impl CPU {
 
         let temp_color = resolve_temp_color(self.temperature_c);
         lines.push(BoxLine::Left(format!(
-            "Temp: {}{:.0}°C{RESET}  {GREEN}|{RESET}  Cores: {} Phys / {} Log  {GREEN}|{RESET}  Freq: {} MHz",
+            "Temp: {}{:.0}°C{RESET}  {CPU_COLOR}|{RESET}  Cores: {} Phys / {} Log  {CPU_COLOR}|{RESET}  Freq: {} MHz",
             temp_color,
             self.temperature_c,
             self.physical_cores,
@@ -123,19 +142,23 @@ impl CPU {
             self.frequency_mhz
         )));
 
-        lines.push(BoxLine::Left(String::new()));
+        lines
+    }
 
-        let num_cols = 3;
-        let col_gap = 2;
-        let total_gaps = (num_cols - 1) * col_gap;
-
-        let col_width = content_width.saturating_sub(total_gaps) / num_cols;
-
+    fn render_core_grid(&self, content_width: usize, num_cols: usize, col_gap: usize) -> Vec<BoxLine> {
         let total_cores = self.core_usages.len();
+        if total_cores == 0 {
+            return Vec::new();
+        }
+
+        let total_gaps = (num_cols - 1) * col_gap;
+        let col_width = content_width.saturating_sub(total_gaps) / num_cols;
         let rows_per_col = (total_cores + num_cols - 1) / num_cols;
 
+        let mut lines = Vec::with_capacity(rows_per_col);
+
         for row in 0..rows_per_col {
-            let mut row_segments = Vec::new();
+            let mut row_segments = Vec::with_capacity(num_cols);
 
             for col in 0..num_cols {
                 let idx = row + (col * rows_per_col);
@@ -158,25 +181,12 @@ impl CPU {
                 }
             }
 
-            lines.push(BoxLine::Left(row_segments.join("  ")));
+            lines.push(BoxLine::Left(row_segments.join(&" ".repeat(col_gap))));
         }
 
         lines
     }
 
-    pub fn display(&self, width: usize) -> Vec<String> {
-        let inner_width = width.saturating_sub(2);
-        let lines = self.render_lines(inner_width);
-
-        let style = BoxStyle {
-            color_code: GREEN,
-            title: self.name.clone(),
-            width,
-        };
-
-        render_box(&lines, &style)
-    }
-    
     fn get_temperature_c(components: &Components) -> f32 {
         components.iter()
             .find(|c| {
@@ -185,5 +195,16 @@ impl CPU {
             })
             .and_then(|c| c.temperature())
             .unwrap_or(0.0)
+    }
+
+    fn record_history_sample(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.last_history_sample) >= self.history_interval {
+            self.usage_history.push_back(self.global_usage as f64);
+            if self.usage_history.len() > self.max_history_len {
+                self.usage_history.pop_front();
+            }
+            self.last_history_sample = now;
+        }
     }
 }
