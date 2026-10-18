@@ -24,6 +24,7 @@ mod storage;
 use storage::Storage;
 mod processes;
 use processes::Processes;
+use crate::ui::box_columns;
 
 const REFRESH_RATE: Duration = Duration::from_millis(500);
 const REFRESH_SPARKLINE: Duration = Duration::from_millis(1000);
@@ -66,17 +67,17 @@ fn main() {
 }
 
 //// ====== System Monitor ======
-struct SystemMonitor {
-    sys: System,
-    components: Components,
-    header: Header,
-    cpu: CPU,
-    memory: Memory,
-    // gpu: GPU,
-    // cooling: Cooling,
-    // network: Network,
-    // storage: Storage,
-    // processes: Processes,
+pub struct SystemMonitor {
+    pub system: System,
+    pub components: Components,
+    pub header: Header,
+    pub cpu: CPU,
+    pub memory: Memory,
+    // pub gpu: GPU,
+    // pub cooling: Cooling,
+    // pub network: Network,
+    // pub storage: Storage,
+    // pub processes: Processes,
 }
 
 impl SystemMonitor {
@@ -93,33 +94,41 @@ impl SystemMonitor {
             header: Header::new(),
             cpu: CPU::new(&sys, &components),
             memory: Memory::new(&sys),
-            // gpu: Default::default(), 
-            // cooling: Default::default(), 
-            // network: Default::default(), 
-            // storage: Default::default(), 
+            // gpu: Default::default(),
+            // cooling: Default::default(),
+            // network: Default::default(),
+            // storage: Default::default(),
             // processes: Default::default(),
-            sys,
+            system: sys,
             components,
         }
     }
 
     pub fn update(&mut self) {
         // Refresh sysinfo data
-        self.sys.refresh_all();
+        self.system.refresh_all();
         self.components.refresh(true);
 
         // Update each component
         self.header.update();
-        self.cpu.update(&self.sys, &self.components);
-        self.memory.update(&self.sys);
+        self.cpu.update(&self.system, &self.components);
+        self.memory.update(&self.system);
     }
 
     pub fn display(&mut self) -> Vec<String> {
-        let width = get_terminal_width(80);
+        let term_width = get_terminal_width(80);
         let mut lines = Vec::new();
 
-        lines.extend(self.header.display(width));
-        lines.extend(self.cpu.display(width / 2));
+        lines.extend(self.header.display(term_width));
+
+        let col_gap = 2;
+        let left_width = (term_width.saturating_sub(col_gap)) / 2;
+        let right_width = term_width.saturating_sub(left_width + col_gap);
+
+        let cpu_box = self.cpu.display(left_width);
+        let mem_box = self.memory.display(right_width);
+
+        lines.extend(box_columns(&cpu_box, &mem_box, left_width));
 
         lines
     }

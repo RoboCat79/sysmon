@@ -12,6 +12,13 @@ pub const MAGENTA: &str = "\x1b[35m";
 pub const CYAN: &str = "\x1b[36m";
 pub const DARK_GRAY: &str = "\x1b[90m";
 
+pub const BOLD: &str = "\x1b[1m";
+pub const BOLD_RED: &str = "\x1b[1;31m";
+pub const BOLD_GREEN: &str = "\x1b[1;32m";
+pub const BOLD_YELLOW: &str = "\x1b[1;33m";
+pub const BOLD_BLUE: &str = "\x1b[1;34m";
+pub const BOLD_MAGENTA: &str = "\x1b[1;35m";
+pub const BOLD_CYAN: &str = "\x1b[1;36m";
 
 #[derive(Clone, Copy)]
 pub enum ColorMode {
@@ -244,16 +251,21 @@ pub fn render_box(lines: &[BoxLine], style: &BoxStyle) -> Vec<String> {
     output
 }
 
-/// Side-by-side box printer for multi-column layouts.
-pub fn print_columns(left_box: &[String], right_box: &[String]) {
+/// Combines two boxes side-by-side with an exact gap and line clearing.
+pub fn box_columns(left_box: &[String], right_box: &[String], left_width: usize) -> Vec<String> {
     let max_lines = left_box.len().max(right_box.len());
+    let blank_left = " ".repeat(left_width);
+
+    let mut lines = Vec::new();
 
     for i in 0..max_lines {
-        let left_str = left_box.get(i).map(|s| s.as_str()).unwrap_or("");
+        let left_str = left_box.get(i).map(|s| s.as_str()).unwrap_or(&blank_left);
         let right_str = right_box.get(i).map(|s| s.as_str()).unwrap_or("");
 
-        println!("{}  {}", left_str, right_str);
+        lines.push(format!("{}  {}\x1b[K", left_str, right_str));
     }
+
+    lines
 }
 
 /// Returns the current terminal width in character columns,
