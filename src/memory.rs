@@ -6,12 +6,11 @@ use crate::MAX_HISTORY_LEN;
 use crate::REFRESH_SPARKLINE;
 use crate::ui::{
     render_bar, render_box, render_sparkline, format_percent, format_bytes,
-    BoxLine, BoxStyle, ColorMode, Alignment, resolve_temp_color, strip_ansi_len,
-    RESET, YELLOW, MAGENTA, BOLD, BOLD_YELLOW,
-    clear_and_home, cursor_home, hide_cursor, show_cursor
+    BoxLine, BoxStyle, ColorMode, strip_ansi_len,
+    RESET, RED, BOLD, BOLD_YELLOW,
 };
 
-const RAM_COLOR: &str = MAGENTA;
+const RAM_COLOR: &str = RED;
 
 #[derive(Debug)]
 pub struct Memory {
@@ -104,7 +103,7 @@ impl Memory {
         let mut lines = Vec::new();
 
         let ram_pct_str = format_percent(self.ram_percent, 5, 1);
-        let ram_prefix = format!("{BOLD_YELLOW}RAM Usage:{RESET} {} ", ram_pct_str);
+        let ram_prefix = format!("{BOLD_YELLOW}RAM Usage:{RESET}  {} ", ram_pct_str);
         let ram_prefix_len = strip_ansi_len(&ram_prefix);
         let dynamic_bar_width = content_width.saturating_sub(ram_prefix_len).max(5);
 
@@ -116,7 +115,7 @@ impl Memory {
         );
         lines.push(BoxLine::Left(format!("{}{}", ram_prefix, ram_bar)));
 
-        let ram_trend_label = format!("{BOLD_YELLOW}RAM Trend:{RESET} ");
+        let ram_trend_label = format!("{BOLD_YELLOW}RAM Trend:{RESET}  ");
         let ram_trend_len = strip_ansi_len(&ram_trend_label);
         let ram_trend_pad = ram_prefix_len.saturating_sub(ram_trend_len);
 

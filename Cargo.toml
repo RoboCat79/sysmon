@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 sysinfo = "0.39.6"
 terminal_size = "0.4"
+nvml-wrapper = "0.10"
